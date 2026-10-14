@@ -20,7 +20,6 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Kiem tra server
     if (req.method === "GET" && url.pathname === "/") {
         res.writeHead(200, {
             "Content-Type": "text/plain; charset=utf-8"
@@ -28,7 +27,6 @@ const server = http.createServer((req, res) => {
         res.end("May ban nuoc QR server dang hoat dong");
     }
 
-    // Tao don hang va QR
     else if (req.method === "POST" && url.pathname === "/tao-don") {
         let body = "";
 
@@ -60,10 +58,10 @@ const server = http.createServer((req, res) => {
                     return;
                 }
 
-                const qr = "https://qr.sepay.vn/img?acc=" + STK
-                    + "&bank=" + BANK
+                const qr = "https://qr.sepay.vn/img?acc=" + encodeURIComponent(STK)
+                    + "&bank=" + encodeURIComponent(BANK)
                     + "&amount=" + gia
-                    + "&des=" + maDon;
+                    + "&des=" + encodeURIComponent("SEVQR " + maDon);
 
                 donHang[maDon] = {
                     sanPham: don.sanPham,
@@ -92,7 +90,6 @@ const server = http.createServer((req, res) => {
         });
     }
 
-    // Kiem tra trang thai don
     else if (req.method === "GET" && url.pathname === "/trang-thai") {
         const maDon = url.searchParams.get("maDon");
         const don = donHang[maDon];
@@ -114,7 +111,6 @@ const server = http.createServer((req, res) => {
         }
     }
 
-    // SePay thong bao giao dich
     else if (req.method === "POST" && url.pathname === "/webhook/sepay") {
         if (!API_KEY ||
             req.headers.authorization !== "Apikey " + API_KEY) {
@@ -157,7 +153,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 res.writeHead(200, {
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json; charset=utf-8"
                 });
 
                 res.end(JSON.stringify({
