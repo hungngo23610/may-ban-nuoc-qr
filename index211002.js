@@ -8,7 +8,6 @@ const PORT = process.env.PORT || 3000;
 const BANK = "ICB";
 const BIN = "970415";
 
-// Don hang luu trong RAM
 const donHang = {};
 
 function tlv(tag, value) {
@@ -16,7 +15,6 @@ function tlv(tag, value) {
     return tag + String(value.length).padStart(2, "0") + value;
 }
 
-// CRC16-CCITT-FALSE
 function crc16(text) {
     let crc = 0xFFFF;
 
@@ -35,7 +33,6 @@ function crc16(text) {
     return crc.toString(16).toUpperCase().padStart(4, "0");
 }
 
-// Tao chuoi VietQR cho Nextion
 function taoVietQR(soTien, maDon) {
     if (!/^\d+$/.test(STK)) {
         throw new Error("STK khong hop le");
@@ -73,7 +70,6 @@ function guiJSON(res, status, data) {
         "Content-Type": "application/json; charset=utf-8",
         "Access-Control-Allow-Origin": "*"
     });
-
     res.end(JSON.stringify(data));
 }
 
@@ -82,60 +78,43 @@ const server = http.createServer((req, res) => {
 
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization"
-    );
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
     if (req.method === "OPTIONS") {
         res.writeHead(204);
         return res.end();
     }
 
-    // Kiem tra server
     if (req.method === "GET" && url.pathname === "/") {
         res.writeHead(200, {
             "Content-Type": "text/plain; charset=utf-8"
         });
-
         return res.end("May ban nuoc QR server dang hoat dong");
     }
 
-    // Tao don hang
     if (req.method === "POST" && url.pathname === "/tao-don") {
         let body = "";
 
         req.on("data", chunk => {
             body += chunk;
-
-            if (body.length > 10000) {
-                req.destroy();
-            }
+            if (body.length > 10000) req.destroy();
         });
 
         req.on("end", () => {
             try {
-                if (!STK || !/^\d+$/.test(STK)) {
+                if (!STK || !/^\d+$/.test(STK) || !API_KEY) {
                     return guiJSON(res, 500, {
-                        loi: "STK tren Render chua dung"
-                    });
-                }
-
-                if (!API_KEY) {
-                    return guiJSON(res, 500, {
-                        loi: "Thieu API_KEY tren Render"
+                        loi: "Kiem tra STK va API_KEY tren Render"
                     });
                 }
 
                 const don = JSON.parse(body);
-                const sanPham = String(don.sanPham || "");
-
-                const bangGia = {
+                const giaTheoSanPham = {
                     "Tra": 10000,
                     "Ca phe": 15000
                 };
 
-                const gia = bangGia[sanPham];
+                const gia = giaTheoSanPham[don.sanPham];
 
                 if (!gia) {
                     return guiJSON(res, 400, {
@@ -144,22 +123,19 @@ const server = http.createServer((req, res) => {
                 }
 
                 const maDon = "DH" + Date.now();
-
                 const qrText = taoVietQR(gia, maDon);
 
-                // Anh QR dung de kiem tra, khong phai qrText
                 const qrUrl =
                     "https://qr.sepay.vn/img?acc=" +
                     encodeURIComponent(STK) +
-                    "&bank=" + BANK +
+                    "&bank=" + encodeURIComponent(BANK) +
                     "&amount=" + gia +
                     "&des=" + encodeURIComponent("SEVQR " + maDon);
 
                 donHang[maDon] = {
-                    sanPham,
+                    sanPham: don.sanPham,
                     soTien: gia,
-                    trangThai: "cho_thanh_toan",
-                    taoLuc: Date.now()
+                    trangThai: "cho_thanh_toan"
                 };
 
                 console.log("Tao don:", maDon, gia);
@@ -173,9 +149,8 @@ const server = http.createServer((req, res) => {
                 });
             } catch (err) {
                 console.error("Loi tao don:", err.message);
-
                 return guiJSON(res, 400, {
-                    loi: "Du lieu khong hop le hoac khong tao duoc QR"
+                    loi: "Khong tao duoc don hang"
                 });
             }
         });
@@ -183,31 +158,23 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Nextion/ESP32 kiem tra thanh toan
     if (req.method === "GET" && url.pathname === "/trang-thai") {
         const maDon = url.searchParams.get("maDon");
         const don = donHang[maDon];
 
-        if (!don) {
-            return guiJSON(res, 200, {
-                maDon,
-                trangThai: "khong_tim_thay"
-            });
-        }
-
-        return guiJSON(res, 200, {
+        return guiJSON(res, 200, don ? {
             maDon,
             trangThai: don.trangThai,
             soTien: don.soTien
+        } : {
+            maDon,
+            trangThai: "khong_tim_thay"
         });
     }
 
-    // SePay gui thong bao giao dich vao
     if (req.method === "POST" && url.pathname === "/webhook/sepay") {
-        if (
-            !API_KEY ||
-            req.headers.authorization !== "Apikey " + API_KEY
-        ) {
+        if (!API_KEY ||
+            req.headers.authorization !== "Apikey " + API_KEY) {
             return guiJSON(res, 401, {
                 loi: "Sai API Key"
             });
@@ -217,10 +184,7 @@ const server = http.createServer((req, res) => {
 
         req.on("data", chunk => {
             body += chunk;
-
-            if (body.length > 100000) {
-                req.destroy();
-            }
+            if (body.length > 100000) req.destroy();
         });
 
         req.on("end", () => {
@@ -238,35 +202,30 @@ const server = http.createServer((req, res) => {
                         const don = donHang[maDon];
 
                         if (
-                            noiDung.includes("SEVQR " + maDon) &&
+                            noiDung.includes("SEVQR " + maDon.toUpperCase()) &&
                             tienNhan === don.soTien &&
                             don.trangThai === "cho_thanh_toan"
                         ) {
                             don.trangThai = "thanh_cong";
-                            don.thanhToanLuc = Date.now();
-
-                            console.log("DA THANH TOAN:", maDon);
                             daCapNhat = true;
+                            console.log("DA THANH TOAN:", maDon);
                             break;
                         }
                     }
                 }
 
-                console.log("Webhook xu ly. Cap nhat:", daCapNhat);
+                console.log("Webhook cap nhat:", daCapNhat);
 
                 res.writeHead(200, {
                     "Content-Type": "application/json; charset=utf-8"
                 });
-
-                return res.end('{"success": true}');
+                res.end('{"success": true}');
             } catch (err) {
                 console.error("Loi webhook:", err.message);
-
                 res.writeHead(400, {
                     "Content-Type": "application/json; charset=utf-8"
                 });
-
-                return res.end('{"success": false}');
+                res.end('{"success": false}');
             }
         });
 
