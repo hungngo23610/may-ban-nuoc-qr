@@ -24,7 +24,7 @@ function crc16(text) {
         crc ^= text.charCodeAt(i) << 8;
 
         for (let j = 0; j < 8; j++) {
-            crc = crc & 0x8000
+            crc = (crc & 0x8000)
                 ? ((crc << 1) ^ 0x1021) & 0xFFFF
                 : (crc << 1) & 0xFFFF;
         }
@@ -42,24 +42,22 @@ function taoChuoiQR(soTien, noiDung) {
 
     const taiKhoan =
         tlv("00", bin) +
-        tlv("01", STK) +
-        tlv("02", "QRIBFTTA");
+        tlv("01", STK);
 
-    const nganHang =
+    const merchantInfo =
         tlv("00", "A000000727") +
-        tlv("01", taiKhoan);
-
-    const thongTinThem = tlv("08", noiDung);
+        tlv("01", taiKhoan) +
+        tlv("02", "QRIBFTTA");
 
     let data =
         tlv("00", "01") +
         tlv("01", "12") +
-        tlv("38", nganHang) +
+        tlv("38", merchantInfo) +
         tlv("52", "0000") +
         tlv("53", "704") +
         tlv("54", soTien) +
         tlv("58", "VN") +
-        tlv("62", thongTinThem);
+        tlv("62", tlv("08", noiDung));
 
     data += "6304";
     data += crc16(data);
@@ -68,14 +66,11 @@ function taoChuoiQR(soTien, noiDung) {
 }
 
 function taoDon(sanPham) {
-    let gia = 0;
+    let gia;
 
     if (sanPham === "Tra") gia = 10000;
-    if (sanPham === "Ca phe") gia = 15000;
-
-    if (!gia) {
-        throw new Error("San pham khong hop le");
-    }
+    else if (sanPham === "Ca phe") gia = 15000;
+    else throw new Error("San pham khong hop le");
 
     if (!STK || !API_KEY || !BINS[BANK]) {
         throw new Error("Kiem tra STK, BANK, API_KEY tren Render");
@@ -91,12 +86,12 @@ function taoDon(sanPham) {
         trangThai: "cho_thanh_toan"
     };
 
-    // Lenh tao QR truc tiep trong Nextion Debug.
+    // Giu nguyen cau truc lenh da dung trong project Nextion.
+    // Can doi toa do/kich thuoc theo giao dien thuc te.
     const nextionCommand =
         'qrcode 20,20,200,65535,0,-1,"' + qrData + '"';
 
     console.log("Tao don:", maDon, gia);
-    console.log("QR data:", qrData);
 
     return {
         maDon,
@@ -139,17 +134,16 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // Tao don that va tra ve lenh QR cho Nextion Debug.
+    // Tao don cho Nextion Debug.
     if (req.method === "GET" && url.pathname === "/tao-qr") {
         try {
-            const sanPham = url.searchParams.get("sanPham");
-            return json(200, taoDon(sanPham));
+            return json(200, taoDon(url.searchParams.get("sanPham")));
         } catch (err) {
             return json(400, { loi: err.message });
         }
     }
 
-    // API cu cua MIT App Inventor van duoc giu lai.
+    // API cu: MIT App Inventor.
     if (req.method === "POST" && url.pathname === "/tao-don") {
         let body = "";
 
@@ -198,9 +192,7 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST" && url.pathname === "/webhook/sepay") {
         if (!API_KEY ||
             req.headers.authorization !== "Apikey " + API_KEY) {
-            res.writeHead(401);
-            res.end("Sai API Key");
-            return;
+            return json(401, { success: false });
         }
 
         let body = "";
@@ -210,6 +202,7 @@ const server = http.createServer((req, res) => {
         req.on("end", () => {
             try {
                 const gd = JSON.parse(body);
+
                 const noiDung = String(gd.content || "").toUpperCase();
                 const tienNhan = Number(gd.transferAmount);
                 const tienVao =
@@ -231,14 +224,13 @@ const server = http.createServer((req, res) => {
                     }
                 }
 
-                // SePay yeu cau HTTP 200 va body dung {"success": true}.
+                // SePay yeu cau HTTP 200 va {"success": true}.
                 res.writeHead(200, {
                     "Content-Type": "application/json; charset=utf-8"
                 });
                 res.end(JSON.stringify({ success: true }));
             } catch (err) {
-                res.writeHead(400);
-                res.end("Du lieu loi");
+                json(400, { success: false });
             }
         });
 
